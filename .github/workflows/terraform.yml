@@ -1,0 +1,46 @@
+name: Terraform Infra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**.tf'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/**.tf'
+
+env:
+  PROJECT_ID: gen-lang-client-0002160432
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      # On a pull request: only plan, don't apply - lets a human review
+      # the plan output before anything actually changes in GCP.
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        run: terraform show -no-color tfplan
+
+      # Only apply when merged to main - never on a PR.
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
