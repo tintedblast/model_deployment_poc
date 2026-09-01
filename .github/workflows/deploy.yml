@@ -1,0 +1,71 @@
+name: Build and Deploy Agents
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: gen-lang-client-0002160432
+  REGION: us-central1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: entry_point
+            name: entry-point
+            public: true
+            timeout: 60
+          - service: triage_agent
+            name: triage-agent
+            public: false
+            timeout: 60
+          - service: summariser_agent
+            name: summariser-agent
+            public: false
+            timeout: 900
+          - service: rectification_agent
+            name: rectification-agent
+            public: false
+            timeout: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - run: gcloud auth configure-docker
+
+      - name: Build and push image
+        run: |
+          docker build -f agents/${{ matrix.service }}/Dockerfile \
+            -t gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:${{ github.sha }} \
+            -t gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:latest .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:${{ github.sha }}
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:latest
+
+      - name: Deploy to Cloud Run (public)
+        if: matrix.public == true
+        run: |
+          gcloud run deploy ${{ matrix.name }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --timeout=${{ matrix.timeout }} \
+            --set-env-vars GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+
+      - name: Deploy to Cloud Run (private)
+        if: matrix.public == false
+        run: |
+          gcloud run deploy ${{ matrix.name }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --timeout=${{ matrix.timeout }} \
+            --set-env-vars GCP_PROJECT_ID=${{ env.PROJECT_ID }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
