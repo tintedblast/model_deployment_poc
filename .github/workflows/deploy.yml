@@ -67,5 +67,6 @@ jobs:
           gcloud run deploy ${{ matrix.name }} \
             --image gcr.io/${{ env.PROJECT_ID }}/${{ matrix.name }}:${{ github.sha }} \
             --region ${{ env.REGION }} \
+            --no-allow-unauthenticated \
             --timeout=${{ matrix.timeout }} \
             --set-env-vars GCP_PROJECT_ID=${{ env.PROJECT_ID }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
