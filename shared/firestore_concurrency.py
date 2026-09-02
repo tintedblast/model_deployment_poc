@@ -36,21 +36,21 @@ class FirestoreSemaphore:
                 return
             await asyncio.sleep(self.poll_interval)
 
-    @firestore.async_transactional
-    async def _try_acquire_once_txn(self, transaction: AsyncTransaction) -> bool:
-        snapshot = await self.doc_ref.get(transaction=transaction)
-        current = snapshot.get("count") if snapshot.exists else 0
-        current = current or 0
-
-        if current >= self.max_count:
-            return False
-
-        transaction.set(self.doc_ref, {"count": current + 1}, merge=True)
-        return True
-
     async def _try_acquire_once(self) -> bool:
+        @firestore.async_transactional
+        async def _acquire_txn(transaction: AsyncTransaction) -> bool:
+            snapshot = await self.doc_ref.get(transaction=transaction)
+            current = snapshot.get("count") if snapshot.exists else 0
+            current = current or 0
+
+            if current >= self.max_count:
+                return False
+
+            transaction.set(self.doc_ref, {"count": current + 1}, merge=True)
+            return True
+
         transaction = db.transaction()
-        return await self._try_acquire_once_txn(transaction)
+        return await _acquire_txn(transaction)
 
     async def release(self):
         @firestore.async_transactional
